@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/sudhanshuraheja/authllama/internal/auth"
+	"github.com/sudhanshuraheja/authllama/internal/observability"
 	"github.com/sudhanshuraheja/authllama/internal/proxy"
 	"github.com/sudhanshuraheja/authllama/internal/ratelimit"
 )
@@ -54,12 +59,14 @@ func main() {
 			header := r.Header.Get("Authorization")
 
 			if !store.IsAuthorized(service, header) {
+				observability.IncAuthFails()
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
 
 			if !limiter.Allow(service) {
 				log.Printf("Rate limit exceeded for service %s", service)
+				observability.IncRateLimited()
 				http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 				return
 			}
@@ -104,10 +111,42 @@ func main() {
 		proxyHandler.HandleDelete(w, r)
 	}))
 
+	go func() {
+		for {
+			time.Sleep(30 * time.Second)
+			observability.Log()
+		}
+	}()
+
 	port := "8080"
 	if os.Getenv("PORT") != "" {
 		port = os.Getenv("PORT")
 	}
-	log.Printf("Listening on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+
+	server := &http.Server{
+		Addr: ":" + port,
+	}
+
+	go func() {
+		log.Printf("Listening on :%s", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server error: %v", err)
+		}
+	}()
+
+	// Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+
+	<-quit
+	log.Println("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Failed to gracefully shutdown: %v", err)
+	}
+
+	log.Println("Server shutdown complete")
 }

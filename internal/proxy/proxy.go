@@ -7,6 +7,8 @@ import (
 	"maps"
 	"net/http"
 	"time"
+
+	"github.com/sudhanshuraheja/authllama/internal/observability"
 )
 
 type ProxyHandler struct {
@@ -47,6 +49,8 @@ func (p *ProxyHandler) forward(method, path string, body io.Reader, w http.Respo
 	const maxBodySize = 10 * 1024 * 1024 // 10MB
 
 	if stream {
+		observability.IncStreamed()
+
 		w.Header().Set("Transfer-Encoding", "chunked")
 		w.Header().Set("X-Accel-Buffering", "no")
 
