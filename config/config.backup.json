@@ -1,0 +1,4 @@
+{
+  "service-a": "Bearer abc123",
+  "service-b": "Bearer xyz456"
+}
