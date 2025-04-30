@@ -21,43 +21,10 @@ func NewProxyHandler(ollamaURL string) *ProxyHandler {
 	}
 }
 
-func (p *ProxyHandler) forwardPost(path string, w http.ResponseWriter, r *http.Request) {
-	log.Printf("Proxying POST to %s", path)
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
-	}
-	r.Body.Close()
+func (p *ProxyHandler) forward(method, path string, body io.Reader, w http.ResponseWriter, r *http.Request) {
+	log.Printf("Proxying %s to %s", method, path)
 
-	proxyReq, err := http.NewRequest(http.MethodPost, p.OllamaURL+path, io.NopCloser(bytes.NewReader(bodyBytes)))
-	if err != nil {
-		http.Error(w, "Failed to create request", http.StatusInternalServerError)
-		return
-	}
-
-	proxyReq.Header = r.Header.Clone()
-
-	resp, err := p.Client.Do(proxyReq)
-	if err != nil {
-		http.Error(w, "Request to Ollama failed", http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-
-	maps.Copy(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		log.Printf("error copying response body: %v", err)
-	}
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
-	}
-}
-
-func (p *ProxyHandler) forwardGet(path string, w http.ResponseWriter, r *http.Request) {
-	log.Printf("Proxying GET to %s", path)
-	proxyReq, err := http.NewRequest(http.MethodGet, p.OllamaURL+path, nil)
+	proxyReq, err := http.NewRequest(method, p.OllamaURL+path, body)
 	if err != nil {
 		http.Error(w, "Failed to create request", http.StatusInternalServerError)
 		return
@@ -80,6 +47,20 @@ func (p *ProxyHandler) forwardGet(path string, w http.ResponseWriter, r *http.Re
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
+}
+
+func (p *ProxyHandler) forwardPost(path string, w http.ResponseWriter, r *http.Request) {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	r.Body.Close()
+	p.forward(http.MethodPost, path, bytes.NewReader(bodyBytes), w, r)
+}
+
+func (p *ProxyHandler) forwardGet(path string, w http.ResponseWriter, r *http.Request) {
+	p.forward(http.MethodGet, path, nil, w, r)
 }
 
 // Handles POST /api/generate
