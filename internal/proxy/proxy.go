@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"maps"
@@ -28,6 +30,7 @@ func (p *ProxyHandler) forward(method, path string, body io.Reader, w http.Respo
 
 	proxyReq, err := http.NewRequest(method, p.OllamaURL+path, body)
 	if err != nil {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		http.Error(w, "Failed to create request", http.StatusInternalServerError)
 		return
 	}
@@ -36,6 +39,7 @@ func (p *ProxyHandler) forward(method, path string, body io.Reader, w http.Respo
 
 	resp, err := p.Client.Do(proxyReq)
 	if err != nil {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		http.Error(w, "Request to Ollama failed", http.StatusBadGateway)
 		return
 	}
@@ -51,31 +55,46 @@ func (p *ProxyHandler) forward(method, path string, body io.Reader, w http.Respo
 	if stream {
 		observability.IncStreamed()
 
-		w.Header().Set("Transfer-Encoding", "chunked")
-		w.Header().Set("X-Accel-Buffering", "no")
+		if _, ok := w.Header()["Transfer-Encoding"]; !ok {
+			w.Header().Set("Transfer-Encoding", "chunked")
+		}
+		if _, ok := w.Header()["X-Accel-Buffering"]; !ok {
+			w.Header().Set("X-Accel-Buffering", "no")
+		}
 
 		flusher, ok := w.(http.Flusher)
 		if !ok {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
 			return
 		}
 
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+
 		reader := io.LimitReader(resp.Body, maxBodySize)
-		buf := make([]byte, 1024)
+		buf := make([]byte, 4096)
+
 		for {
-			n, err := reader.Read(buf)
-			if n > 0 {
-				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-					log.Printf("stream write error: %v", writeErr)
-					break
+			select {
+			case <-ctx.Done():
+				log.Printf("stream timeout for %s %s", method, path)
+				return
+			default:
+				n, err := reader.Read(buf)
+				if n > 0 {
+					if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+						log.Printf("stream write error: %v", writeErr)
+						return
+					}
+					flusher.Flush()
 				}
-				flusher.Flush()
-			}
-			if err != nil {
-				if err != io.EOF {
-					log.Printf("stream read error: %v", err)
+				if err != nil {
+					if err != io.EOF {
+						log.Printf("stream read error: %v", err)
+					}
+					return
 				}
-				break
 			}
 		}
 	} else {
@@ -92,15 +111,19 @@ func (p *ProxyHandler) forward(method, path string, body io.Reader, w http.Respo
 func (p *ProxyHandler) forwardPost(path string, w http.ResponseWriter, r *http.Request) {
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
 	r.Body.Close()
 
-	var shouldStream bool
-	if bytes.Contains(bodyBytes, []byte(`"stream": true`)) {
-		shouldStream = true
+	type StreamFlag struct {
+		Stream bool `json:"stream"`
 	}
+	var sf StreamFlag
+	_ = json.Unmarshal(bodyBytes, &sf)
+	shouldStream := sf.Stream
+
 	p.forward(http.MethodPost, path, bytes.NewReader(bodyBytes), w, r, shouldStream)
 }
 
