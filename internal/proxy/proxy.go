@@ -41,7 +41,13 @@ func (p *ProxyHandler) forward(method, path string, body io.Reader, w http.Respo
 
 	maps.Copy(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
-	if _, err := io.Copy(w, resp.Body); err != nil {
+	if resp.StatusCode >= 400 {
+		log.Printf("Ollama returned error %d for %s %s", resp.StatusCode, method, path)
+	}
+	const maxBodySize = 10 * 1024 * 1024 // 10MB
+
+	limitedBody := io.LimitReader(resp.Body, maxBodySize)
+	if _, err := io.Copy(w, limitedBody); err != nil {
 		log.Printf("error copying response body: %v", err)
 	}
 	if flusher, ok := w.(http.Flusher); ok {
