@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -12,8 +13,22 @@ func TestForwardPost(t *testing.T) {
 	// Start fake Ollama server
 	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/") {
-			if _, err := io.WriteString(w, `{"response":"This is a mock response for `+r.URL.Path+`"}`); err != nil {
-				t.Fatalf("failed to write response: %v", err)
+			body, _ := io.ReadAll(r.Body)
+			if strings.Contains(string(body), `"stream": true`) {
+				flusher, ok := w.(http.Flusher)
+				if !ok {
+					t.Fatalf("response does not support flushing")
+				}
+				w.Header().Set("Content-Type", "application/json")
+				for _, i := range []int{1, 2, 3} {
+					chunk := `{"chunk": "` + strconv.Itoa(1+i) + `"}`
+					if _, err := io.WriteString(w, chunk); err != nil {
+						t.Fatalf("failed to write stream chunk: %v", err)
+					}
+					flusher.Flush()
+				}
+			} else {
+				_, _ = io.WriteString(w, `{"response": "mock response"}`)
 			}
 		} else {
 			http.NotFound(w, r)
@@ -34,6 +49,12 @@ func TestForwardPost(t *testing.T) {
 			handler:  handler.HandleGenerate,
 			endpoint: "/api/generate",
 			payload:  `{"model":"gemma:2b","prompt":"Hello"}`,
+		},
+		{
+			name:     "generate_streaming",
+			handler:  handler.HandleGenerate,
+			endpoint: "/api/generate",
+			payload:  `{"model":"gemma:2b","prompt":"Stream this","stream": true}`,
 		},
 		{
 			name:     "chat",
@@ -81,8 +102,18 @@ func TestForwardPost(t *testing.T) {
 			if resp.StatusCode != http.StatusOK {
 				t.Fatalf("%s: expected 200, got %d", tt.endpoint, resp.StatusCode)
 			}
-			if !strings.Contains(string(body), "mock response") {
-				t.Errorf("%s: unexpected body: %s", tt.endpoint, string(body))
+			if tt.name == "generate_streaming" {
+				// Check that all chunks are received
+				for _, i := range []int{1, 2, 3} {
+					chunk := `{"chunk": "` + strconv.Itoa(1+i) + `"}` // or fmt.Sprintf
+					if !strings.Contains(string(body), chunk) {
+						t.Errorf("%s: missing chunk %s in body: %s", tt.endpoint, chunk, string(body))
+					}
+				}
+			} else {
+				if !strings.Contains(string(body), "mock response") {
+					t.Errorf("%s: unexpected body: %s", tt.endpoint, string(body))
+				}
 			}
 		})
 	}

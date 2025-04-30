@@ -21,7 +21,7 @@ func NewProxyHandler(ollamaURL string) *ProxyHandler {
 	}
 }
 
-func (p *ProxyHandler) forward(method, path string, body io.Reader, w http.ResponseWriter, r *http.Request) {
+func (p *ProxyHandler) forward(method, path string, body io.Reader, w http.ResponseWriter, r *http.Request, stream bool) {
 	log.Printf("Proxying %s to %s", method, path)
 
 	proxyReq, err := http.NewRequest(method, p.OllamaURL+path, body)
@@ -46,12 +46,42 @@ func (p *ProxyHandler) forward(method, path string, body io.Reader, w http.Respo
 	}
 	const maxBodySize = 10 * 1024 * 1024 // 10MB
 
-	limitedBody := io.LimitReader(resp.Body, maxBodySize)
-	if _, err := io.Copy(w, limitedBody); err != nil {
-		log.Printf("error copying response body: %v", err)
-	}
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
+	if stream {
+		w.Header().Set("Transfer-Encoding", "chunked")
+		w.Header().Set("X-Accel-Buffering", "no")
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+
+		reader := io.LimitReader(resp.Body, maxBodySize)
+		buf := make([]byte, 1024)
+		for {
+			n, err := reader.Read(buf)
+			if n > 0 {
+				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+					log.Printf("stream write error: %v", writeErr)
+					break
+				}
+				flusher.Flush()
+			}
+			if err != nil {
+				if err != io.EOF {
+					log.Printf("stream read error: %v", err)
+				}
+				break
+			}
+		}
+	} else {
+		reader := io.LimitReader(resp.Body, maxBodySize)
+		if _, err := io.Copy(w, reader); err != nil {
+			log.Printf("error copying response body: %v", err)
+		}
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
 	}
 }
 
@@ -62,11 +92,16 @@ func (p *ProxyHandler) forwardPost(path string, w http.ResponseWriter, r *http.R
 		return
 	}
 	r.Body.Close()
-	p.forward(http.MethodPost, path, bytes.NewReader(bodyBytes), w, r)
+
+	var shouldStream bool
+	if bytes.Contains(bodyBytes, []byte(`"stream": true`)) {
+		shouldStream = true
+	}
+	p.forward(http.MethodPost, path, bytes.NewReader(bodyBytes), w, r, shouldStream)
 }
 
 func (p *ProxyHandler) forwardGet(path string, w http.ResponseWriter, r *http.Request) {
-	p.forward(http.MethodGet, path, nil, w, r)
+	p.forward(http.MethodGet, path, nil, w, r, false)
 }
 
 // Handles POST /api/generate
