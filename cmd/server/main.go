@@ -8,12 +8,18 @@ import (
 
 	"github.com/sudhanshuraheja/authllama/internal/auth"
 	"github.com/sudhanshuraheja/authllama/internal/proxy"
+	"github.com/sudhanshuraheja/authllama/internal/ratelimit"
 )
 
 func main() {
 	store, err := auth.LoadAuthConfig("config/config.json")
 	if err != nil {
 		log.Fatalf("failed to load auth config: %v", err)
+	}
+
+	limiter, err := ratelimit.LoadRateLimiter("config/config.json")
+	if err != nil {
+		log.Fatalf("failed to load rate limiter config: %v", err)
 	}
 
 	proxyHandler := proxy.NewProxyHandler("http://localhost:11434") // Ollama default port
@@ -25,6 +31,12 @@ func main() {
 
 			if !store.IsAuthorized(service, header) {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			if !limiter.Allow(service) {
+				log.Printf("Rate limit exceeded for service %s", service)
+				http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 				return
 			}
 
@@ -49,7 +61,7 @@ func main() {
 	}))
 
 	http.HandleFunc("/api/show", authWrapper(func(w http.ResponseWriter, r *http.Request, _ string) {
-		proxyHandler.HandleTags(w, r)
+		proxyHandler.HandleShow(w, r)
 	}))
 
 	http.HandleFunc("/api/pull", authWrapper(func(w http.ResponseWriter, r *http.Request, _ string) {

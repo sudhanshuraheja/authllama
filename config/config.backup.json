@@ -1,4 +1,10 @@
 {
-  "service-a": "Bearer abc123",
-  "service-b": "Bearer xyz456"
+  "service-a": {
+    "auth": "Bearer abc123",
+    "tpm": 100
+  },
+  "service-b": {
+    "auth": "Bearer xyz456",
+    "tpm": 30
+  }
 }

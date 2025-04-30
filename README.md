@@ -28,7 +28,6 @@ A small wrapper over Ollama to add:
 - Support for streaming
   - Handle streamed responses (`Transfer-Encoding: chunked`)
   - Ensure proper error handling during stream interruptions
-  - Stream rules and exceptions defined via file-based settings
 
 - Rate limiting per service-name with a local file
   - Define RPM/TPS per service in config

@@ -4,8 +4,10 @@ tidy:
 run:
 	go run ./cmd/server
 
-coverage:
+test:
 	go test -coverprofile=coverage.out ./...
+
+coverage:
 	go tool cover -html=coverage.out
 
 race:
