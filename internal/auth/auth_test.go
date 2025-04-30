@@ -19,7 +19,7 @@ func TestIsAuthorized(t *testing.T) {
 	path := "test_config.json"
 	defer os.Remove(path)
 
-	writeTestFile(t, path, `{"service-a": "Bearer abc123"}`)
+	writeTestFile(t, path, `{"service-a": {"auth": "Bearer abc123", "tpm": 10}}`)
 
 	store, err := LoadAuthConfig(path)
 	if err != nil {
@@ -47,7 +47,7 @@ func TestReloadConfig(t *testing.T) {
 	path := "test_reload_config.json"
 	defer os.Remove(path)
 
-	writeTestFile(t, path, `{"service-x": "Bearer old-token"}`)
+	writeTestFile(t, path, `{"service-x": {"auth": "Bearer old-token", "tpm": 10}}`)
 
 	store, err := LoadAuthConfig(path)
 	if err != nil {
@@ -58,7 +58,7 @@ func TestReloadConfig(t *testing.T) {
 		t.Fatal("expected old-token to be authorized")
 	}
 
-	writeTestFile(t, path, `{"service-x": "Bearer new-token"}`)
+	writeTestFile(t, path, `{"service-x": {"auth": "Bearer new-token", "tpm": 10}}`)
 
 	time.Sleep(300 * time.Millisecond)
 

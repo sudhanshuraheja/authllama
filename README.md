@@ -2,52 +2,41 @@
 
 A lightweight proxy for Ollama that adds file-based authentication and request control.
 
-# Tasks
+# Features
 
-A small wrapper over Ollama to add:
-
-- File-based auth header verification
+- File-based authentication
   - Local file with service-name and expected auth header
-  - Reject unauthorized requests with clear error
-  - Reload file on change (or via endpoint)
-  - All logic must use file-based configuration
+  - Reject unauthorized requests with 401
+  - Reloads config on file change and via `/admin/reload`
+  - All logic driven by config file (`config/config.json`)
 
-- Support for all Ollama APIs (each with file-based config support)
-  - Pass-through `/api/generate` endpoint
-  - Pass-through `/api/chat` endpoint
-  - Pass-through `/api/tags` endpoint
-  - Pass-through `/api/show` endpoint
-  - Pass-through `/api/pull` endpoint
-  - Pass-through `/api/push` endpoint
-  - Pass-through `/api/create` endpoint
-  - Pass-through `/api/delete` endpoint
-  - Support GET, POST, and model-specific endpoints
-  - Log basic request metadata
-  - All routing and controls based on file configuration
+- Full Ollama API passthrough
+  - Supports `/api/generate`, `/api/chat`, `/api/tags`, `/api/show`, `/api/pull`, `/api/push`, `/api/create`, `/api/delete`
+  - Supports GET and POST
+  - Logs basic request metadata
+  - Controlled by per-service config
 
-- Support for streaming
-  - Handle streamed responses (`Transfer-Encoding: chunked`)
-  - Ensure proper error handling during stream interruptions
+- Streaming support
+  - Detects `"stream": true` requests
+  - Streams responses with flush and chunking
+  - Timeout on inactive stream
+  - Handles write/read/timeout errors
 
-- Rate limiting per service-name with a local file
-  - Define RPM/TPS per service in config
-  - Track usage per service
-  - Return 429 on limit breach
-  - Graceful handling and logging of rate-limit events
-  - Entire logic driven by file-based limits
+- Rate limiting per service
+  - Defined as TPM (transactions per minute) in config
+  - Tracks usage per service
+  - Returns 429 on limit breach
+  - Logs rate-limit events
+  - Reloadable from config file and via `/admin/reload`
 
 - Config reload
-  - Reload auth and rate-limit config file without restart
-  - File watcher or HTTP endpoint to trigger reload
-  - All reloadable data must originate from files
+  - Uses `fsnotify` to detect file changes
+  - Also supports `/admin/reload` endpoint with `X-Admin-Key` protection
+  - Reloads both auth and rate-limit configs
 
 - Observability
-  - Track request count, auth failures, rate-limit events
-  - Optionally expose Prometheus-compatible `/metrics` endpoint
-  - Metrics config and logging preferences via file
+  - Tracks: request count, auth failures, rate-limit responses, stream sessions
+  - Logs metrics every 30 seconds to stdout
 
-- Optional enhancements (also file-driven)
-  - JWT/Bearer token auth support
-  - Admin-only `/admin/status` to view loaded config and usage
-  - Audit logs for access and rejections
-  - Integration test harness for multi-service load testing
+- Graceful shutdown
+  - Handles `SIGINT`/`SIGTERM` and cleanly shuts down the HTTP server
