@@ -44,6 +44,30 @@ func main() {
 		proxyHandler.HandleChat(w, r)
 	}))
 
+	http.HandleFunc("/api/tags", authWrapper(func(w http.ResponseWriter, r *http.Request, _ string) {
+		proxyHandler.HandleTags(w, r)
+	}))
+
+	http.HandleFunc("/api/show", authWrapper(func(w http.ResponseWriter, r *http.Request, _ string) {
+		proxyHandler.HandleTags(w, r)
+	}))
+
+	http.HandleFunc("/api/pull", authWrapper(func(w http.ResponseWriter, r *http.Request, _ string) {
+		proxyHandler.HandlePull(w, r)
+	}))
+
+	http.HandleFunc("/api/push", authWrapper(func(w http.ResponseWriter, r *http.Request, _ string) {
+		proxyHandler.HandlePush(w, r)
+	}))
+
+	http.HandleFunc("/api/create", authWrapper(func(w http.ResponseWriter, r *http.Request, _ string) {
+		proxyHandler.HandleCreate(w, r)
+	}))
+
+	http.HandleFunc("/api/delete", authWrapper(func(w http.ResponseWriter, r *http.Request, _ string) {
+		proxyHandler.HandleDelete(w, r)
+	}))
+
 	port := "8080"
 	if os.Getenv("PORT") != "" {
 		port = os.Getenv("PORT")
