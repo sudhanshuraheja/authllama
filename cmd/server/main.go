@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/sudhanshuraheja/authllama/internal/auth"
+	"github.com/sudhanshuraheja/authllama/internal/proxy"
 )
 
 func main() {
@@ -25,6 +26,20 @@ func main() {
 		}
 
 		fmt.Fprintf(w, "Hello, %s! You are authorized.\n", service)
+	})
+
+	proxyHandler := proxy.NewProxyHandler("http://localhost:11434") // Ollama default port
+
+	http.HandleFunc("/api/generate", func(w http.ResponseWriter, r *http.Request) {
+		service := r.Header.Get("X-Service-Name")
+		authHeader := r.Header.Get("Authorization")
+
+		if !store.IsAuthorized(service, authHeader) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		proxyHandler.HandleGenerate(w, r)
 	})
 
 	port := "8080"
