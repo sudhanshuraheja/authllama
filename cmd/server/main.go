@@ -30,6 +30,7 @@ func main() {
 
 	proxyHandler := proxy.NewProxyHandler("http://localhost:11434") // Ollama default port
 
+	// route for /api/generate
 	http.HandleFunc("/api/generate", func(w http.ResponseWriter, r *http.Request) {
 		service := r.Header.Get("X-Service-Name")
 		authHeader := r.Header.Get("Authorization")
@@ -40,6 +41,19 @@ func main() {
 		}
 
 		proxyHandler.HandleGenerate(w, r)
+	})
+
+	// route for /api/chat
+	http.HandleFunc("/api/chat", func(w http.ResponseWriter, r *http.Request) {
+		service := r.Header.Get("X-Service-Name")
+		header := r.Header.Get("Authorization")
+
+		if !store.IsAuthorized(service, header) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		proxyHandler.HandleChat(w, r)
 	})
 
 	port := "8080"
