@@ -24,6 +24,30 @@ func main() {
 
 	proxyHandler := proxy.NewProxyHandler("http://localhost:11434") // Ollama default port
 
+	adminKey := os.Getenv("ADMIN_API_KEY")
+
+	http.HandleFunc("/admin/reload", func(w http.ResponseWriter, r *http.Request) {
+		apiKey := r.Header.Get("X-Admin-Key")
+		if apiKey != adminKey {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		if err := store.Reload(); err != nil {
+			http.Error(w, "Failed to reload auth config", http.StatusInternalServerError)
+			return
+		}
+		if err := limiter.Reload(); err != nil {
+			http.Error(w, "Failed to reload rate limit config", http.StatusInternalServerError)
+			return
+		}
+		log.Println("Manual config reload successful")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte("Reloaded config")); err != nil {
+			log.Printf("failed to write reload confirmation: %v", err)
+		}
+	})
+
 	authWrapper := func(handler func(w http.ResponseWriter, r *http.Request, service string)) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			service := r.Header.Get("X-Service-Name")

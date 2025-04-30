@@ -60,6 +60,10 @@ func (a *AuthStore) load() error {
 	return nil
 }
 
+func (a *AuthStore) Reload() error {
+	return a.load()
+}
+
 func (a *AuthStore) watchFile() {
 	for {
 		select {

@@ -1,5 +1,3 @@
-
-
 package ratelimit
 
 import (
@@ -150,4 +148,8 @@ func (rl *RateLimiter) Allow(service string) bool {
 		return true // no limit for this service
 	}
 	return tb.Allow()
+}
+
+func (r *RateLimiter) Reload() error {
+	return r.load()
 }
