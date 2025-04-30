@@ -20,8 +20,7 @@ func NewProxyHandler(ollamaURL string) *ProxyHandler {
 	}
 }
 
-// Handles POST /api/generate
-func (p *ProxyHandler) HandleGenerate(w http.ResponseWriter, r *http.Request) {
+func (p *ProxyHandler) forwardPost(path string, w http.ResponseWriter, r *http.Request) {
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -29,38 +28,7 @@ func (p *ProxyHandler) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body.Close()
 
-	proxyReq, err := http.NewRequest(http.MethodPost, p.OllamaURL+"/api/generate", io.NopCloser(bytes.NewReader(bodyBytes)))
-	if err != nil {
-		http.Error(w, "Failed to create request", http.StatusInternalServerError)
-		return
-	}
-
-	proxyReq.Header = r.Header.Clone() // Forward headers
-
-	resp, err := p.Client.Do(proxyReq)
-	if err != nil {
-		http.Error(w, "Request to Ollama failed", http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-
-	maps.Copy(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-	if _, err := io.Copy(w, resp.Body); err != nil {
-		log.Printf("error copying response body: %v", err)
-	}
-}
-
-// Handles POST /api/chat
-func (p *ProxyHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
-	}
-	r.Body.Close()
-
-	proxyReq, err := http.NewRequest(http.MethodPost, p.OllamaURL+"/api/chat", io.NopCloser(bytes.NewReader(bodyBytes)))
+	proxyReq, err := http.NewRequest(http.MethodPost, p.OllamaURL+path, io.NopCloser(bytes.NewReader(bodyBytes)))
 	if err != nil {
 		http.Error(w, "Failed to create request", http.StatusInternalServerError)
 		return
@@ -80,4 +48,14 @@ func (p *ProxyHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		log.Printf("error copying response body: %v", err)
 	}
+}
+
+// Handles POST /api/generate
+func (p *ProxyHandler) HandleGenerate(w http.ResponseWriter, r *http.Request) {
+	p.forwardPost("/api/generate", w, r)
+}
+
+// Handles POST /api/chat
+func (p *ProxyHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
+	p.forwardPost("/api/chat", w, r)
 }

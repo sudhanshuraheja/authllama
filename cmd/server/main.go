@@ -16,45 +16,33 @@ func main() {
 		log.Fatalf("failed to load auth config: %v", err)
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		service := r.Header.Get("X-Service-Name")
-		header := r.Header.Get("Authorization")
-
-		if !store.IsAuthorized(service, header) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		fmt.Fprintf(w, "Hello, %s! You are authorized.\n", service)
-	})
-
 	proxyHandler := proxy.NewProxyHandler("http://localhost:11434") // Ollama default port
 
-	// route for /api/generate
-	http.HandleFunc("/api/generate", func(w http.ResponseWriter, r *http.Request) {
-		service := r.Header.Get("X-Service-Name")
-		authHeader := r.Header.Get("Authorization")
+	authWrapper := func(handler func(w http.ResponseWriter, r *http.Request, service string)) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			service := r.Header.Get("X-Service-Name")
+			header := r.Header.Get("Authorization")
 
-		if !store.IsAuthorized(service, authHeader) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
+			if !store.IsAuthorized(service, header) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			handler(w, r, service)
 		}
+	}
 
+	http.HandleFunc("/", authWrapper(func(w http.ResponseWriter, r *http.Request, service string) {
+		fmt.Fprintf(w, "Hello, %s! You are authorized.\n", service)
+	}))
+
+	http.HandleFunc("/api/generate", authWrapper(func(w http.ResponseWriter, r *http.Request, _ string) {
 		proxyHandler.HandleGenerate(w, r)
-	})
+	}))
 
-	// route for /api/chat
-	http.HandleFunc("/api/chat", func(w http.ResponseWriter, r *http.Request) {
-		service := r.Header.Get("X-Service-Name")
-		header := r.Header.Get("Authorization")
-
-		if !store.IsAuthorized(service, header) {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-
+	http.HandleFunc("/api/chat", authWrapper(func(w http.ResponseWriter, r *http.Request, _ string) {
 		proxyHandler.HandleChat(w, r)
-	})
+	}))
 
 	port := "8080"
 	if os.Getenv("PORT") != "" {
