@@ -109,13 +109,17 @@ func (a *AuthStore) Close() error {
 	return nil
 }
 
-func (a *AuthStore) IsAuthorized(service string, header string) bool {
+func (a *AuthStore) IsAuthorized(service, header string) bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
+
 	svc, err := a.config.GetService(service)
 	if err != nil {
-		log.Printf("auth check failed: %v", err)
+		log.Printf("auth check failed: service %q not found", service)
 		return false
 	}
+
+	log.Printf("Auth check for service=%q: expected=<%s>, received=<%s>", service, svc.Auth, header)
+
 	return svc.Auth == header
 }

@@ -136,6 +136,15 @@ func (p *ProxyHandler) forwardPost(path string, w http.ResponseWriter, r *http.R
 	if err := json.Unmarshal(bodyBytes, &sf); err != nil {
 		log.Printf("failed to parse stream flag: %v", err)
 	}
+	// Log model and prompt after decoding StreamFlag.
+	type PromptLog struct {
+		Model  string `json:"model"`
+		Prompt string `json:"prompt"`
+	}
+	var pl PromptLog
+	if err := json.Unmarshal(bodyBytes, &pl); err == nil {
+		log.Printf("request model=%q prompt=%q", pl.Model, pl.Prompt)
+	}
 	shouldStream := sf.Stream
 
 	p.forward(http.MethodPost, path, bytes.NewReader(bodyBytes), w, r, shouldStream)

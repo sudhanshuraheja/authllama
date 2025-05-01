@@ -24,6 +24,10 @@ clean: ## Remove coverage output
 race: ## Run race detector on tests
 	go test -race ./...
 
+publictest:
+	curl -X POST http://localhost:3000/api/generate -H "Authorization: Bearer TWkj!8_CCNNdRoM@g.E" -H "Content-Type: application/json" -H "X-Service-Name: service-a" -d '{"model":"gemma:2b","prompt":"What is the capital of India?","stream":false}'
+	curl -X POST http://localhost:3000/api/generate -H "Authorization: Bearer TWkj!8_CCNNdRoM@g.E" -H "Content-Type: application/json" -H "X-Service-Name: service-a" -d '{"model":"gemma:2b","prompt":"What is the capital of India?","stream":true}'
+
 # Docker image registry settings
 GITHUB_USER=sudhanshuraheja
 IMAGE_NAME=authllama

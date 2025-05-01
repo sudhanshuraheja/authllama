@@ -1,6 +1,6 @@
 {
   "_global": {
-    "port": "7020",
+    "port": "3000",
     "ollama_url": "http://localhost:11434",
     "admin_api_key": "replace-me",
     "max_body_size": 10485760,
