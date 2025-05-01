@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sudhanshuraheja/authllama/internal/observability"
 	"github.com/sudhanshuraheja/authllama/internal/config"
+	"github.com/sudhanshuraheja/authllama/internal/observability"
 )
 
 type ProxyHandler struct {
@@ -94,6 +94,7 @@ func (p *ProxyHandler) forward(method, path string, body io.Reader, w http.Respo
 
 	resp, err := p.Client.Do(proxyReq)
 	if err != nil {
+		log.Printf("Request to Ollama failed: %v", err)
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		http.Error(w, "Request to Ollama failed", http.StatusBadGateway)
 		return
