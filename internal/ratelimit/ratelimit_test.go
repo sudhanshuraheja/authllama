@@ -18,8 +18,15 @@ func TestLoadRateLimiterAndIsAuthorized(t *testing.T) {
 	defer os.Remove(path)
 
 	writeTestConfig(t, path, `{
-		"service-a": {"auth": "Bearer abc123", "tpm": 5},
-		"service-b": {"auth": "Bearer xyz456", "tpm": 0}
+		"_global": {
+			"ollama_url": "http://localhost:11434",
+			"port": "8080",
+			"admin_api_key": "test"
+		},
+		"services": {
+			"service-a": {"auth": "Bearer abc123", "tpm": 5},
+			"service-b": {"auth": "Bearer xyz456", "tpm": 0}
+		}
 	}`)
 
 	rl, err := LoadRateLimiter(path)
@@ -43,7 +50,14 @@ func TestRateLimitEnforcement(t *testing.T) {
 	defer os.Remove(path)
 
 	writeTestConfig(t, path, `{
-		"service-a": {"auth": "Bearer abc123", "tpm": 2}
+		"_global": {
+			"ollama_url": "http://localhost:11434",
+			"port": "8080",
+			"admin_api_key": "test"
+		},
+		"services": {
+			"service-a": {"auth": "Bearer abc123", "tpm": 2}
+		}
 	}`)
 
 	rl, err := LoadRateLimiter(path)

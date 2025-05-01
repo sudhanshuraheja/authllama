@@ -11,17 +11,72 @@ import (
 	"time"
 
 	"github.com/sudhanshuraheja/authllama/internal/observability"
+	"github.com/sudhanshuraheja/authllama/internal/config"
 )
 
 type ProxyHandler struct {
 	OllamaURL string
 	Client    *http.Client
+	Config    config.GlobalConfig
 }
 
-func NewProxyHandler(ollamaURL string) *ProxyHandler {
+func NewProxyHandler(cfg config.GlobalConfig) *ProxyHandler {
 	return &ProxyHandler{
-		OllamaURL: ollamaURL,
-		Client:    &http.Client{Timeout: 15 * time.Second},
+		OllamaURL: cfg.OllamaURL,
+		Client:    &http.Client{Timeout: time.Duration(cfg.TimeoutSecs) * time.Second},
+		Config:    cfg,
+	}
+}
+
+func NewProxy(cfg *config.Config) *ProxyHandler {
+	if cfg.Global.OllamaURL == "" {
+		log.Fatal("missing ollama_url in _global config")
+	}
+	return NewProxyHandler(cfg.Global)
+}
+
+func (p *ProxyHandler) streamResponse(resp *http.Response, method, path string, w http.ResponseWriter, r *http.Request) {
+	observability.IncStreamed()
+
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(resp.StatusCode)
+
+	ctx, cancel := context.WithTimeout(r.Context(), p.Config.StreamTimeout())
+	defer cancel()
+
+	reader := io.LimitReader(resp.Body, int64(p.Config.MaxBodySize))
+	buf := make([]byte, p.Config.StreamBufferSize)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("stream timeout for %s %s", method, path)
+			return
+		default:
+			n, err := reader.Read(buf)
+			if n > 0 {
+				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+					log.Printf("stream write error: %v", writeErr)
+					return
+				}
+				flusher.Flush()
+			}
+			if err != nil {
+				if err != io.EOF {
+					log.Printf("stream read error: %v", err)
+				}
+				return
+			}
+		}
 	}
 }
 
@@ -46,65 +101,22 @@ func (p *ProxyHandler) forward(method, path string, body io.Reader, w http.Respo
 	defer resp.Body.Close()
 
 	maps.Copy(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
 	if resp.StatusCode >= 400 {
 		log.Printf("Ollama returned error %d for %s %s", resp.StatusCode, method, path)
 	}
-	const maxBodySize = 10 * 1024 * 1024 // 10MB
 
 	if stream {
-		observability.IncStreamed()
+		p.streamResponse(resp, method, path, w, r)
+		return
+	}
 
-		if _, ok := w.Header()["Transfer-Encoding"]; !ok {
-			w.Header().Set("Transfer-Encoding", "chunked")
-		}
-		if _, ok := w.Header()["X-Accel-Buffering"]; !ok {
-			w.Header().Set("X-Accel-Buffering", "no")
-		}
-
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-		defer cancel()
-
-		reader := io.LimitReader(resp.Body, maxBodySize)
-		buf := make([]byte, 4096)
-
-		for {
-			select {
-			case <-ctx.Done():
-				log.Printf("stream timeout for %s %s", method, path)
-				return
-			default:
-				n, err := reader.Read(buf)
-				if n > 0 {
-					if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-						log.Printf("stream write error: %v", writeErr)
-						return
-					}
-					flusher.Flush()
-				}
-				if err != nil {
-					if err != io.EOF {
-						log.Printf("stream read error: %v", err)
-					}
-					return
-				}
-			}
-		}
-	} else {
-		reader := io.LimitReader(resp.Body, maxBodySize)
-		if _, err := io.Copy(w, reader); err != nil {
-			log.Printf("error copying response body: %v", err)
-		}
-		if flusher, ok := w.(http.Flusher); ok {
-			flusher.Flush()
-		}
+	w.WriteHeader(resp.StatusCode)
+	reader := io.LimitReader(resp.Body, int64(p.Config.MaxBodySize))
+	if _, err := io.Copy(w, reader); err != nil {
+		log.Printf("error copying response body: %v", err)
+	}
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
 	}
 }
 
@@ -121,7 +133,9 @@ func (p *ProxyHandler) forwardPost(path string, w http.ResponseWriter, r *http.R
 		Stream bool `json:"stream"`
 	}
 	var sf StreamFlag
-	_ = json.Unmarshal(bodyBytes, &sf)
+	if err := json.Unmarshal(bodyBytes, &sf); err != nil {
+		log.Printf("failed to parse stream flag: %v", err)
+	}
 	shouldStream := sf.Stream
 
 	p.forward(http.MethodPost, path, bytes.NewReader(bodyBytes), w, r, shouldStream)

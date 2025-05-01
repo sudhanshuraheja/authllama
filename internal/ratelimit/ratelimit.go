@@ -1,24 +1,18 @@
 package ratelimit
 
 import (
-	"encoding/json"
 	"log"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/sudhanshuraheja/authllama/internal/config"
 )
-
-type ServiceConfig struct {
-	Auth string `json:"auth"`
-	TPM  int    `json:"tpm"`
-}
 
 type RateLimiter struct {
 	mu      sync.RWMutex
 	path    string
-	config  map[string]ServiceConfig
+	config  *config.Config
 	buckets map[string]*tokenBucket
 	watcher *fsnotify.Watcher
 }
@@ -56,10 +50,29 @@ func min(a, b int) int {
 	return b
 }
 
+func NewLimiter(cfg *config.Config) *RateLimiter {
+	buckets := make(map[string]*tokenBucket)
+	for service, cfg := range cfg.Services {
+		if cfg.TPM > 0 {
+			interval := time.Minute / time.Duration(cfg.TPM)
+			buckets[service] = &tokenBucket{
+				lastRefill: time.Now(),
+				tokens:     cfg.TPM,
+				capacity:   cfg.TPM,
+				interval:   interval,
+			}
+		}
+	}
+
+	return &RateLimiter{
+		config:  cfg,
+		buckets: buckets,
+	}
+}
+
 func LoadRateLimiter(path string) (*RateLimiter, error) {
 	rl := &RateLimiter{
 		path:    path,
-		config:  map[string]ServiceConfig{},
 		buckets: map[string]*tokenBucket{},
 	}
 
@@ -86,19 +99,13 @@ func (rl *RateLimiter) load() error {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	data, err := os.ReadFile(rl.path)
+	cfg, err := config.LoadConfig(rl.path)
 	if err != nil {
 		return err
 	}
-
-	var parsed map[string]ServiceConfig
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return err
-	}
-
-	rl.config = parsed
+	rl.config = cfg
 	rl.buckets = map[string]*tokenBucket{}
-	for service, cfg := range parsed {
+	for service, cfg := range cfg.Services {
 		if cfg.TPM > 0 {
 			interval := time.Minute / time.Duration(cfg.TPM)
 			rl.buckets[service] = &tokenBucket{
@@ -136,8 +143,8 @@ func (rl *RateLimiter) watch() {
 func (rl *RateLimiter) IsAuthorized(service, token string) bool {
 	rl.mu.RLock()
 	defer rl.mu.RUnlock()
-	cfg, ok := rl.config[service]
-	return ok && cfg.Auth == token
+	cfg, err := rl.config.GetService(service)
+	return err == nil && cfg.Auth == token
 }
 
 func (rl *RateLimiter) Allow(service string) bool {

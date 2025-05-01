@@ -1,46 +1,43 @@
 package auth
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/sudhanshuraheja/authllama/internal/config"
 )
 
 type AuthStore struct {
 	mu      sync.RWMutex
 	path    string
-	data    map[string]ServiceConfig
+	config  *config.Config
 	watcher *fsnotify.Watcher
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
-type ServiceConfig struct {
-	Auth string `json:"auth"`
-	TPM  int    `json:"tpm"`
+func NewStore(cfg *config.Config) *AuthStore {
+	return &AuthStore{
+		config: cfg,
+	}
 }
 
 func LoadAuthConfig(path string) (*AuthStore, error) {
 	store := &AuthStore{
 		path: path,
-		data: map[string]ServiceConfig{},
 	}
 
 	if err := store.load(); err != nil {
 		return nil, err
 	}
 
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return nil, err
-	}
-	store.watcher = watcher
-
-	go store.watchFile()
-
-	if err := watcher.Add(path); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	store.ctx = ctx
+	store.cancel = cancel
+	if err := store.setupWatcher(); err != nil {
 		return nil, err
 	}
 
@@ -51,25 +48,16 @@ func (a *AuthStore) load() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	content, err := os.ReadFile(a.path)
+	cfg, err := config.LoadConfig(a.path)
 	if err != nil {
 		return err
 	}
-
-	var newData map[string]ServiceConfig
-	if err := json.Unmarshal(content, &newData); err != nil {
-		return err
+	// Minimal validation: must have at least one service
+	if len(cfg.Services) == 0 {
+		return fmt.Errorf("invalid config: no services defined")
 	}
-
-	for svc, cfg := range newData {
-		if cfg.Auth == "" {
-			return fmt.Errorf("missing auth for service: %s", svc)
-		}
-	}
-
-	a.data = newData
+	a.config = cfg
 	log.Println("Auth config reloaded")
-
 	return nil
 }
 
@@ -77,9 +65,11 @@ func (a *AuthStore) Reload() error {
 	return a.load()
 }
 
-func (a *AuthStore) watchFile() {
+func (a *AuthStore) watchFile(ctx context.Context) {
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case event, ok := <-a.watcher.Events:
 			if !ok {
 				return
@@ -99,7 +89,20 @@ func (a *AuthStore) watchFile() {
 	}
 }
 
+func (a *AuthStore) setupWatcher() error {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return err
+	}
+	a.watcher = watcher
+	go a.watchFile(a.ctx)
+	return watcher.Add(a.path)
+}
+
 func (a *AuthStore) Close() error {
+	if a.cancel != nil {
+		a.cancel()
+	}
 	if a.watcher != nil {
 		return a.watcher.Close()
 	}
@@ -109,9 +112,10 @@ func (a *AuthStore) Close() error {
 func (a *AuthStore) IsAuthorized(service string, header string) bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	expected, ok := a.data[service]
-	if !ok {
-		log.Printf("auth check failed: unknown service '%s'", service)
+	svc, err := a.config.GetService(service)
+	if err != nil {
+		log.Printf("auth check failed: %v", err)
+		return false
 	}
-	return ok && expected.Auth == header
+	return svc.Auth == header
 }

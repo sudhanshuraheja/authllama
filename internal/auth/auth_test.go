@@ -19,7 +19,16 @@ func TestIsAuthorized(t *testing.T) {
 	path := "test_config.json"
 	defer os.Remove(path)
 
-	writeTestFile(t, path, `{"service-a": {"auth": "Bearer abc123", "tpm": 10}}`)
+	writeTestFile(t, path, `{
+	"_global": {
+		"ollama_url": "http://localhost:11434",
+		"port": "8080",
+		"admin_api_key": "test"
+	},
+	"services": {
+		"service-a": {"auth": "Bearer abc123", "tpm": 10}
+	}
+}`)
 
 	store, err := LoadAuthConfig(path)
 	if err != nil {
@@ -47,7 +56,16 @@ func TestReloadConfig(t *testing.T) {
 	path := "test_reload_config.json"
 	defer os.Remove(path)
 
-	writeTestFile(t, path, `{"service-x": {"auth": "Bearer old-token", "tpm": 10}}`)
+	writeTestFile(t, path, `{
+	"_global": {
+		"ollama_url": "http://localhost:11434",
+		"port": "8080",
+		"admin_api_key": "test"
+	},
+	"services": {
+		"service-x": {"auth": "Bearer old-token", "tpm": 10}
+	}
+}`)
 
 	store, err := LoadAuthConfig(path)
 	if err != nil {
@@ -58,7 +76,16 @@ func TestReloadConfig(t *testing.T) {
 		t.Fatal("expected old-token to be authorized")
 	}
 
-	writeTestFile(t, path, `{"service-x": {"auth": "Bearer new-token", "tpm": 10}}`)
+	writeTestFile(t, path, `{
+	"_global": {
+		"ollama_url": "http://localhost:11434",
+		"port": "8080",
+		"admin_api_key": "test"
+	},
+	"services": {
+		"service-x": {"auth": "Bearer new-token", "tpm": 10}
+	}
+}`)
 
 	time.Sleep(300 * time.Millisecond)
 

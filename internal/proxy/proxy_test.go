@@ -1,5 +1,7 @@
 package proxy
 
+import "github.com/sudhanshuraheja/authllama/internal/config"
+
 import (
 	"io"
 	"net/http"
@@ -36,7 +38,15 @@ func TestForwardPost(t *testing.T) {
 	}))
 	defer ollama.Close()
 
-	handler := NewProxyHandler(ollama.URL)
+	cfg := config.GlobalConfig{
+		OllamaURL:         ollama.URL,
+		Port:              "8080",
+		TimeoutSecs:       15,
+		MaxBodySize:       10 * 1024 * 1024,
+		StreamBufferSize:  4096,
+		StreamTimeoutSecs: 30,
+	}
+	handler := NewProxyHandler(cfg)
 
 	tests := []struct {
 		name     string
@@ -131,7 +141,15 @@ func TestForwardGet(t *testing.T) {
 	}))
 	defer ollama.Close()
 
-	handler := NewProxyHandler(ollama.URL)
+	cfg := config.GlobalConfig{
+		OllamaURL:         ollama.URL,
+		Port:              "8080",
+		TimeoutSecs:       15,
+		MaxBodySize:       10 * 1024 * 1024,
+		StreamBufferSize:  4096,
+		StreamTimeoutSecs: 30,
+	}
+	handler := NewProxyHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tags", nil)
 	rr := httptest.NewRecorder()

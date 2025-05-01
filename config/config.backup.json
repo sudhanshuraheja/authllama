@@ -1,10 +1,21 @@
 {
-  "service-a": {
-    "auth": "Bearer abc123",
-    "tpm": 100
+  "_global": {
+    "port": "7020",
+    "ollama_url": "http://localhost:11434",
+    "admin_api_key": "replace-me",
+    "max_body_size": 10485760,
+    "stream_buffer_size": 4096,
+    "stream_timeout_seconds": 30,
+    "timeout_seconds": 15
   },
-  "service-b": {
-    "auth": "Bearer xyz456",
-    "tpm": 30
+  "services": {
+    "service-a": {
+      "auth": "Bearer abc123",
+      "tpm": 100
+    },
+    "service-b": {
+      "auth": "Bearer xyz456",
+      "tpm": 30
+    }
   }
 }
